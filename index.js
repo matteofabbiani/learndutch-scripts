@@ -1278,3 +1278,80 @@
 
   }
 }
+
+// ===== COOKIE CONSENT =====
+// Google consent mode ("advanced"): Tag Manager always loads, with analytics storage denied
+// until the visitor accepts. While denied, Google Analytics sets no cookies and only receives
+// anonymous, cookieless signals. The default state is set in the Webflow site head code from
+// the saved choice (localStorage "ldk-consent"). The banner is the "Cookie Banner" component
+// in both footers.
+(function () {
+  'use strict';
+
+  var KEY = 'ldk-consent';
+  var KEY_AT = 'ldk-consent-at';
+  var REASK_AFTER_DAYS = 30; // a visitor who declined is asked again after this long
+
+  var banner = document.querySelector('.cookie-banner_component');
+  if (!banner) return;
+
+  // Webflow's API cannot write attributes on this component's root, so they are set here
+  banner.setAttribute('role', 'dialog');
+  banner.setAttribute('aria-label', 'Cookie choice');
+
+  function read(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
+  function save(value) {
+    try {
+      localStorage.setItem(KEY, value);
+      localStorage.setItem(KEY_AT, String(Date.now()));
+    } catch (e) {}
+  }
+  function show() { banner.classList.add('is-visible'); }
+  function hide() { banner.classList.remove('is-visible'); }
+
+  function updateConsent(granted) {
+    window.dataLayer = window.dataLayer || [];
+    (function () { window.dataLayer.push(arguments); })('consent', 'update', {
+      analytics_storage: granted ? 'granted' : 'denied'
+    });
+  }
+
+  // Remove Google Analytics cookies after a visitor withdraws consent
+  function clearAnalyticsCookies() {
+    var host = location.hostname.replace(/^www\./, '');
+    document.cookie.split(';').forEach(function (pair) {
+      var name = pair.split('=')[0].trim();
+      if (!/^_ga|^_gid$|^_gat|^pendingPurchase$/.test(name)) return;
+      ['', '; domain=.' + host, '; domain=' + location.hostname].forEach(function (domain) {
+        document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/' + domain;
+      });
+    });
+  }
+
+  document.addEventListener('click', function (e) {
+    var target = e.target.closest('[data-cookie-accept], [data-cookie-decline], [data-cookie-settings]');
+    if (!target) return;
+    e.preventDefault();
+
+    if (target.hasAttribute('data-cookie-settings')) {
+      show();
+      return;
+    }
+
+    var granted = target.hasAttribute('data-cookie-accept');
+    var before = read(KEY);
+    save(granted ? 'granted' : 'denied');
+    updateConsent(granted);
+    hide();
+
+    if (!granted && before === 'granted') {
+      // Analytics cookies exist from before: remove them and start clean
+      clearAnalyticsCookies();
+      location.reload();
+    }
+  });
+
+  var choice = read(KEY);
+  var age = Date.now() - Number(read(KEY_AT) || 0);
+  if (!choice || (choice === 'denied' && age > REASK_AFTER_DAYS * 24 * 60 * 60 * 1000)) show();
+})();
