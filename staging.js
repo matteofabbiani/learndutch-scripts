@@ -1287,8 +1287,12 @@
   'use strict';
 
   var KEY = 'ldk-consent';
-  var banner = document.querySelector('[data-cookie-banner]');
+  var banner = document.querySelector('.cookie-banner_component');
   if (!banner) return;
+
+  // Webflow's API cannot write attributes on this component's root, so they are set here
+  banner.setAttribute('role', 'dialog');
+  banner.setAttribute('aria-label', 'Cookie choice');
 
   function read() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }
   function save(value) { try { localStorage.setItem(KEY, value); } catch (e) {} }
