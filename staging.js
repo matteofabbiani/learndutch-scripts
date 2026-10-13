@@ -1297,7 +1297,6 @@
 
   // Webflow's API cannot write attributes on this component's root, so they are set here
   banner.setAttribute('role', 'dialog');
-  banner.setAttribute('aria-modal', 'true');
   banner.setAttribute('aria-label', 'Cookie choice');
 
   function read(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
