@@ -1,0 +1,17 @@
+<!-- learndutch-scripts loader -->
+<script>
+  (function () {
+    function load() {
+      var staging = location.hostname.endsWith(".webflow.io");
+      var s = document.createElement("script");
+      s.src = "https://matteofabbiani.github.io/learndutch-scripts/" +
+        (staging ? "staging.js?t=" + Date.now() : "index.js");
+      document.body.appendChild(s);
+    }
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", load);
+    } else {
+      load();
+    }
+  })();
+</script>
