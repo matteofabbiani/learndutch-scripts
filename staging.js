@@ -1280,24 +1280,42 @@
 }
 
 // ===== COOKIE CONSENT =====
-// Google Tag Manager (analytics) loads only after the visitor accepts.
-// The saved choice (localStorage "ldk-consent") and the loader (window.ldkLoadGTM) live in the
-// Webflow site head code. The banner is the "Cookie Banner" component in both footers.
+// Google consent mode ("advanced"): Tag Manager always loads, with analytics storage denied
+// until the visitor accepts. While denied, Google Analytics sets no cookies and only receives
+// anonymous, cookieless signals. The default state is set in the Webflow site head code from
+// the saved choice (localStorage "ldk-consent"). The banner is the "Cookie Banner" component
+// in both footers.
 (function () {
   'use strict';
 
   var KEY = 'ldk-consent';
+  var KEY_AT = 'ldk-consent-at';
+  var REASK_AFTER_DAYS = 30; // a visitor who declined is asked again after this long
+
   var banner = document.querySelector('.cookie-banner_component');
   if (!banner) return;
 
   // Webflow's API cannot write attributes on this component's root, so they are set here
   banner.setAttribute('role', 'dialog');
+  banner.setAttribute('aria-modal', 'true');
   banner.setAttribute('aria-label', 'Cookie choice');
 
-  function read() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }
-  function save(value) { try { localStorage.setItem(KEY, value); } catch (e) {} }
+  function read(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
+  function save(value) {
+    try {
+      localStorage.setItem(KEY, value);
+      localStorage.setItem(KEY_AT, String(Date.now()));
+    } catch (e) {}
+  }
   function show() { banner.classList.add('is-visible'); }
   function hide() { banner.classList.remove('is-visible'); }
+
+  function updateConsent(granted) {
+    window.dataLayer = window.dataLayer || [];
+    (function () { window.dataLayer.push(arguments); })('consent', 'update', {
+      analytics_storage: granted ? 'granted' : 'denied'
+    });
+  }
 
   // Remove Google Analytics cookies after a visitor withdraws consent
   function clearAnalyticsCookies() {
@@ -1322,18 +1340,19 @@
     }
 
     var granted = target.hasAttribute('data-cookie-accept');
-    var before = read();
+    var before = read(KEY);
     save(granted ? 'granted' : 'denied');
+    updateConsent(granted);
     hide();
 
-    if (granted) {
-      if (window.ldkLoadGTM) window.ldkLoadGTM();
-    } else if (before === 'granted') {
-      // Analytics is already running on this page: clear its cookies and start clean
+    if (!granted && before === 'granted') {
+      // Analytics cookies exist from before: remove them and start clean
       clearAnalyticsCookies();
       location.reload();
     }
   });
 
-  if (!read()) show();
+  var choice = read(KEY);
+  var age = Date.now() - Number(read(KEY_AT) || 0);
+  if (!choice || (choice === 'denied' && age > REASK_AFTER_DAYS * 24 * 60 * 60 * 1000)) show();
 })();
