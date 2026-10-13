@@ -1278,3 +1278,58 @@
 
   }
 }
+
+// ===== COOKIE CONSENT =====
+// Google Tag Manager (analytics) loads only after the visitor accepts.
+// The saved choice (localStorage "ldk-consent") and the loader (window.ldkLoadGTM) live in the
+// Webflow site head code. The banner is the "Cookie Banner" component in both footers.
+(function () {
+  'use strict';
+
+  var KEY = 'ldk-consent';
+  var banner = document.querySelector('[data-cookie-banner]');
+  if (!banner) return;
+
+  function read() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }
+  function save(value) { try { localStorage.setItem(KEY, value); } catch (e) {} }
+  function show() { banner.classList.add('is-visible'); }
+  function hide() { banner.classList.remove('is-visible'); }
+
+  // Remove Google Analytics cookies after a visitor withdraws consent
+  function clearAnalyticsCookies() {
+    var host = location.hostname.replace(/^www\./, '');
+    document.cookie.split(';').forEach(function (pair) {
+      var name = pair.split('=')[0].trim();
+      if (!/^_ga|^_gid$|^_gat|^pendingPurchase$/.test(name)) return;
+      ['', '; domain=.' + host, '; domain=' + location.hostname].forEach(function (domain) {
+        document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/' + domain;
+      });
+    });
+  }
+
+  document.addEventListener('click', function (e) {
+    var target = e.target.closest('[data-cookie-accept], [data-cookie-decline], [data-cookie-settings]');
+    if (!target) return;
+    e.preventDefault();
+
+    if (target.hasAttribute('data-cookie-settings')) {
+      show();
+      return;
+    }
+
+    var granted = target.hasAttribute('data-cookie-accept');
+    var before = read();
+    save(granted ? 'granted' : 'denied');
+    hide();
+
+    if (granted) {
+      if (window.ldkLoadGTM) window.ldkLoadGTM();
+    } else if (before === 'granted') {
+      // Analytics is already running on this page: clear its cookies and start clean
+      clearAnalyticsCookies();
+      location.reload();
+    }
+  });
+
+  if (!read()) show();
+})();
