@@ -21,5 +21,6 @@ Custom JS for the Learn Dutch with Kim Webflow site (`learndutchwithkim.com`), s
 - The code expects these globals, loaded before it: `gsap`, `ScrollTrigger`, `SplitText`, `CustomEase`, `Draggable` (by Webflow) and `Swiper` (script tag in the site footer, above the loader).
 - The file is loaded after `DOMContentLoaded`: code added here must not wait for that event (use a `document.readyState` check).
 - The about block at the end of the file is gated by path, copied from the Slater loader. Its code does not check for its own elements, so keep the gate.
+- The last block of the file is the cookie consent module (Google advanced consent mode). The default consent state is set in the Webflow site head code from `localStorage` key `ldk-consent`; this module shows the "Cookie Banner" component, sends the consent update on Accept/Decline and asks again 30 days after a decline. Test with `qa/consent-test.mjs` in the project folder.
 - CSS stays in Webflow embeds. Class and attribute names the scripts toggle (`is-opened`, `is-activated`, `swiper-dragging`, `line-mask`, `eyebrow-text-mask`, …) are styled there; do not rename them.
 - `webflow-loader.html` is the copy of the snippet in Webflow → Site settings → Custom code → Footer.
