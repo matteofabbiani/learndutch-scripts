@@ -113,8 +113,13 @@
       const config = this.parseConfig(element);
       const { nextEl, prevEl, paginationEl } = this.getNavigationElements(element, config);
 
-      const swiper = new Swiper(utils.$('.swiper', element), {
+      const swiperEl = utils.$('.swiper', element);
+      // Webflow collection lists are role="list": keep their slides list items for screen readers
+      const isList = swiperEl?.querySelector('.swiper-wrapper')?.getAttribute('role') === 'list';
+
+      const swiper = new Swiper(swiperEl, {
         ...this.buildSwiperConfig(config, { nextEl, prevEl, paginationEl }),
+        ...(isList ? { a11y: { slideRole: 'listitem' } } : {}),
         on: this.createEventHandlers(config)
       });
 
