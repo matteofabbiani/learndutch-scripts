@@ -589,6 +589,7 @@
       groups.forEach(group => {
         const split = SplitText.create(group, {
           type: "lines",
+          aria: "none", // keep the text readable as-is; no aria-label on the paragraph
           linesClass: "line",
         });
 
@@ -607,6 +608,7 @@
     animateInlineText(text, timeline) {
       const split = SplitText.create(text, {
         type: "lines",
+        aria: "none", // keep the text readable as-is; no aria-label on the paragraph
         linesClass: "line",
       });
 
@@ -857,6 +859,7 @@
     animateHeroText(timeline, element, position) {
       const split = SplitText.create(element, {
         type: "lines",
+        aria: "none", // keep the text readable as-is; no aria-label on the paragraph
         linesClass: "line"
       });
 
@@ -1221,7 +1224,7 @@
     document.querySelectorAll('.words_text').forEach(function (el) {
       if (el.closest('.voice-hero_content')) return;
       try {
-        var split = new SplitText(el, { type: 'words', position: 'relative' });
+        var split = new SplitText(el, { type: 'words', position: 'relative', aria: 'none' });
         if (!split.words.length) return;
         var triggerEl = el.closest('.words_component') || el;
         gsap.set(split.words, { opacity: 0, x: '1.5rem' });
