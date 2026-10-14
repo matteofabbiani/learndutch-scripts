@@ -973,6 +973,8 @@
 
       loadThumbnail() {
         if (!this.thumbnail) return;
+        // Already set by the early thumbnail script in the site head (picks the size per screen)
+        if (this.thumbnail.getAttribute('src')) return;
 
         const qualities = ['maxresdefault', 'hqdefault', 'mqdefault', 'default'];
         let qualityIndex = 0;
