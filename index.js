@@ -1152,6 +1152,136 @@
     }
   };
 
+  // ===== DIALOGS =====
+  // A native <dialog data-dialog="name"> (e.g. the newsletter dialog) opens from any element with
+  // data-dialog-open="name": the "Opens dialog" prop of the Button and Clickable Link components.
+  // The browser keeps focus inside, makes the page behind inert and closes on Escape;
+  // this module adds the site's GSAP motion, focus placement and focus return.
+  const DialogModule = {
+    init() {
+      utils.$$('dialog[data-dialog]').forEach(dialog => this.setup(dialog));
+    },
+
+    reducedMotion() {
+      return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    },
+
+    // Site eases are registered by GSAPAnimations; fall back if CustomEase is missing
+    ease(name, fallback) {
+      return utils.isLoaded('CustomEase') && CustomEase.get(name) ? name : fallback;
+    },
+
+    setup(dialog) {
+      if (typeof dialog.showModal !== 'function') return;
+
+      const name = dialog.getAttribute('data-dialog');
+      if (!dialog.id) dialog.id = `${name}-dialog`;
+
+      const panel = utils.$('[data-dialog-panel]', dialog);
+      const overlay = utils.$('[data-dialog-overlay]', dialog);
+      const content = utils.$('[data-dialog-content]', dialog);
+      const items = content ? Array.from(content.children) : [];
+      let opener = null;
+      let timeline = null;
+      let closing = false;
+
+      // Triggers announce that they open a dialog
+      utils.$$(`[data-dialog-open="${name}"]`).forEach(trigger => {
+        trigger.setAttribute('aria-haspopup', 'dialog');
+        trigger.setAttribute('aria-controls', dialog.id);
+      });
+
+      // Button component used as a form's submit: press the form's real (hidden) submit,
+      // like the footer form, so Webflow's spam check runs
+      utils.$$('form', dialog).forEach(form => {
+        const realSubmit = utils.$('[mf-code-submit-old]', form);
+        const visibleSubmit = utils.$('div.button', form);
+        if (realSubmit && visibleSubmit && !visibleSubmit.hasAttribute('mf-code-submit-new')) {
+          visibleSubmit.setAttribute('mf-code-submit-new', realSubmit.getAttribute('mf-code-submit-old'));
+        }
+      });
+
+      // After a successful sign-up, move focus to the thank-you message so it is read out
+      const success = utils.$('.w-form-done', dialog);
+      if (success) {
+        new MutationObserver(() => {
+          if (dialog.open && getComputedStyle(success).display !== 'none') success.focus({ preventScroll: true });
+        }).observe(success, { attributes: true, attributeFilter: ['style'] });
+      }
+
+      const open = (trigger) => {
+        if (dialog.open) return;
+        opener = trigger;
+        closing = false;
+        dialog.showModal();
+
+        // Precise pointer: straight to the email field. Touch: no keyboard popping up, start on the close button
+        const field = utils.$('input[type="email"]', dialog);
+        const closeButton = utils.$('button[data-dialog-close]', dialog);
+        const first = window.matchMedia('(pointer: fine)').matches && field ? field : closeButton;
+        if (first) first.focus({ preventScroll: true });
+
+        if (!utils.isLoaded('gsap')) return;
+        if (timeline) timeline.kill();
+
+        if (this.reducedMotion()) {
+          timeline = gsap.timeline()
+            .fromTo([overlay, panel], { opacity: 0 }, { opacity: 1, duration: 0.2, ease: 'power1.out' });
+          return;
+        }
+
+        // Same motion as the site's cards on scroll ([data-animate-rotate] + [data-animate])
+        timeline = gsap.timeline()
+          .fromTo(overlay, { opacity: 0 }, { opacity: 1, duration: 0.4, ease: 'power2.out' }, 0)
+          .fromTo(panel, { opacity: 0 }, { opacity: 1, duration: 0.6, ease: 'power2.out' }, 0)
+          .fromTo(panel, { rotateZ: -3.5, scale: 0.93 },
+            { rotateZ: 0, scale: 1, duration: 0.8, ease: this.ease('rotationEase', 'back.out(1.7)') }, 0)
+          .fromTo(items, { opacity: 0, y: 24 },
+            { opacity: 1, y: 0, duration: 0.9, ease: this.ease('customEase1', 'power3.out'), stagger: 0.08 }, 0.1);
+      };
+
+      const finishClose = () => {
+        closing = false;
+        dialog.close();
+        if (utils.isLoaded('gsap')) gsap.set([overlay, panel, ...items], { clearProps: 'opacity,transform' });
+        if (opener && opener.isConnected) opener.focus({ preventScroll: true });
+      };
+
+      const close = () => {
+        if (!dialog.open || closing) return;
+        closing = true;
+        if (!utils.isLoaded('gsap')) return finishClose();
+        if (timeline) timeline.kill();
+
+        const duration = this.reducedMotion() ? 0.15 : 0.3;
+        timeline = gsap.timeline({ onComplete: finishClose })
+          .to(panel, this.reducedMotion()
+            ? { opacity: 0, duration, ease: 'power1.in' }
+            : { opacity: 0, scale: 0.96, rotateZ: -1.5, duration, ease: 'power2.in' }, 0)
+          .to(overlay, { opacity: 0, duration, ease: 'power2.in' }, 0.05);
+      };
+
+      document.addEventListener('click', (e) => {
+        const trigger = e.target.closest(`[data-dialog-open="${name}"]`);
+        if (!trigger) return;
+        e.preventDefault();
+        open(trigger);
+      });
+
+      dialog.addEventListener('click', (e) => {
+        if (!e.target.closest('[data-dialog-close]')) return;
+        e.preventDefault();
+        close();
+      });
+
+      // Escape: animate out instead of the browser's instant close
+      dialog.addEventListener('cancel', (e) => {
+        e.preventDefault();
+        close();
+      });
+    }
+  };
+
   // ===== INITIALIZATION =====
   const App = {
     init() {
@@ -1159,6 +1289,7 @@
       SwiperModule.init();
       AccordionModule.init();
       YouTubeModule.init();
+      DialogModule.init();
       MiscFeatures.init();
 
       // GSAP animations (run after other modules)
@@ -1176,6 +1307,7 @@
       accordion: AccordionModule,
       gsap: GSAPAnimations,
       youtube: YouTubeModule,
+      dialog: DialogModule,
       misc: MiscFeatures
     },
 
