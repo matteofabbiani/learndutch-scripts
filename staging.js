@@ -507,21 +507,39 @@
       this.watchPageHeight();
     },
 
-    // Images without a set size (e.g. the device mockups on the course pages) load late and push
-    // everything below them down. Recalculate the scroll triggers whenever the page height changes,
-    // otherwise reveals further down (pricing cards) fire too early or only after scrolling back and forth.
+    // Images without a set size load late and push everything below them down. Recalculate the
+    // scroll triggers whenever the page height changes, otherwise reveals further down (pricing cards)
+    // fire too early or only after scrolling back and forth.
+    // A refresh while the page is moving stops iOS momentum scrolling dead (the Safari toolbar
+    // changes the height as soon as you start scrolling), so it waits until the page is at rest.
     watchPageHeight() {
       if (!('ResizeObserver' in window)) return;
 
       let lastHeight = document.body.scrollHeight;
       let timer = null;
+      let scrolling = false;
+      let pending = false;
+
+      const refresh = () => {
+        pending = false;
+        ScrollTrigger.refresh();
+      };
+
+      window.addEventListener('scroll', () => { scrolling = true; }, { passive: true });
+      ScrollTrigger.addEventListener('scrollEnd', () => {
+        scrolling = false;
+        if (pending) refresh();
+      });
 
       new ResizeObserver(() => {
         const height = document.body.scrollHeight;
         if (Math.abs(height - lastHeight) < 2) return;
         lastHeight = height;
         clearTimeout(timer);
-        timer = setTimeout(() => ScrollTrigger.refresh(), 150);
+        timer = setTimeout(() => {
+          if (scrolling) pending = true;
+          else refresh();
+        }, 150);
       }).observe(document.body);
     },
 
