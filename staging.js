@@ -504,6 +504,25 @@
 
       this.registerPlugins();
       this.setupAnimations();
+      this.watchPageHeight();
+    },
+
+    // Images without a set size (e.g. the device mockups on the course pages) load late and push
+    // everything below them down. Recalculate the scroll triggers whenever the page height changes,
+    // otherwise reveals further down (pricing cards) fire too early or only after scrolling back and forth.
+    watchPageHeight() {
+      if (!('ResizeObserver' in window)) return;
+
+      let lastHeight = document.body.scrollHeight;
+      let timer = null;
+
+      new ResizeObserver(() => {
+        const height = document.body.scrollHeight;
+        if (Math.abs(height - lastHeight) < 2) return;
+        lastHeight = height;
+        clearTimeout(timer);
+        timer = setTimeout(() => ScrollTrigger.refresh(), 150);
+      }).observe(document.body);
     },
 
     registerPlugins() {
