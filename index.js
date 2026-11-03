@@ -504,6 +504,25 @@
 
       this.registerPlugins();
       this.setupAnimations();
+      this.watchPageHeight();
+    },
+
+    // Images without a set size (e.g. the device mockups on the course pages) load late and push
+    // everything below them down. Recalculate the scroll triggers whenever the page height changes,
+    // otherwise reveals further down (pricing cards) fire too early or only after scrolling back and forth.
+    watchPageHeight() {
+      if (!('ResizeObserver' in window)) return;
+
+      let lastHeight = document.body.scrollHeight;
+      let timer = null;
+
+      new ResizeObserver(() => {
+        const height = document.body.scrollHeight;
+        if (Math.abs(height - lastHeight) < 2) return;
+        lastHeight = height;
+        clearTimeout(timer);
+        timer = setTimeout(() => ScrollTrigger.refresh(), 150);
+      }).observe(document.body);
     },
 
     registerPlugins() {
@@ -1282,6 +1301,156 @@
     }
   };
 
+  // ===== MODULE: PROMOTIONS =====
+  // Promo pages: countdown (Promo Countdown component) and discount code box (Promo Code component).
+  // The first countdown on the page sets html[data-promo-state] to upcoming | live | ended;
+  // CSS in the Global Styles embed shows/hides [data-promo-show] and [data-promo-hide-when] from it.
+  const PromoModule = {
+    TIME_ZONE: 'Europe/Amsterdam',
+
+    init() {
+      const countdowns = utils.$$('[data-promo-countdown]');
+      countdowns.forEach((el, i) => this.setupCountdown(el, i === 0));
+      utils.$$('[data-promo-copy]').forEach(button => this.setupCopy(button));
+    },
+
+    // "2026-11-30 23:59", "30-11-2026 23:59", "2026/11/30", ... read as Amsterdam time
+    parseDate(value, defaultTime) {
+      if (!value) return null;
+      const text = value.trim();
+      let m = text.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:[ T]+(\d{1,2})[:.](\d{2}))?$/);
+      let y, mo, d, h, mi;
+      if (m) {
+        [y, mo, d, h, mi] = [m[1], m[2], m[3], m[4], m[5]];
+      } else {
+        m = text.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})(?:[ T]+(\d{1,2})[:.](\d{2}))?$/);
+        if (!m) return null;
+        [d, mo, y, h, mi] = [m[1], m[2], m[3], m[4], m[5]];
+      }
+      if (h === undefined) [h, mi] = defaultTime;
+      const wall = Date.UTC(+y, +mo - 1, +d, +h, +mi);
+      if (Number.isNaN(wall)) return null;
+      // Shift by Amsterdam's offset at that moment (twice, to settle around DST changes)
+      let utc = wall;
+      for (let i = 0; i < 2; i++) utc = wall - this.offset(utc);
+      return new Date(utc);
+    },
+
+    offset(utcMs) {
+      const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: this.TIME_ZONE, hourCycle: 'h23',
+        year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit'
+      }).formatToParts(new Date(utcMs)).reduce((acc, p) => (acc[p.type] = p.value, acc), {});
+      const asUtc = Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute, +parts.second);
+      return asUtc - Math.floor(utcMs / 1000) * 1000;
+    },
+
+    setupCountdown(el, setsPageState) {
+      const start = this.parseDate(el.getAttribute('data-promo-start'), [0, 0]);
+      const end = this.parseDate(el.getAttribute('data-promo-end'), [23, 59]);
+      if (!end) {
+        console.warn('Promo countdown: End date missing or not readable. Use a date like 2026-11-30 23:59.');
+        return;
+      }
+
+      const values = {};
+      utils.$$('[data-promo-countdown-value]', el).forEach(v => { values[v.getAttribute('data-promo-countdown-value')] = v; });
+      const units = utils.$('[data-promo-countdown-units]', el);
+      const unitLabels = utils.$$('.promo-countdown_unit-label', el).map(l => l.textContent.trim().toLowerCase());
+      const pad = (n) => String(n).padStart(2, '0');
+      let lastState = null;
+      let lastMinute = null;
+      let timer = null;
+
+      const render = () => {
+        const now = Date.now();
+        const state = start && now < start ? 'upcoming' : now < end ? 'live' : 'ended';
+        const target = state === 'upcoming' ? start : end;
+        const left = Math.max(0, target - now);
+        const s = Math.floor(left / 1000);
+        const parts = { days: Math.floor(s / 86400), hours: Math.floor(s / 3600) % 24, minutes: Math.floor(s / 60) % 60, seconds: s % 60 };
+
+        Object.keys(parts).forEach(k => { if (values[k]) values[k].textContent = pad(parts[k]); });
+
+        // Screen readers: a summary once a minute instead of every second
+        const minute = Math.floor(s / 60);
+        if (units && minute !== lastMinute) {
+          lastMinute = minute;
+          const [dl = 'days', hl = 'hours', ml = 'minutes'] = unitLabels;
+          units.setAttribute('aria-label', `${parts.days} ${dl}, ${parts.hours} ${hl}, ${parts.minutes} ${ml}`);
+        }
+
+        if (state !== lastState) {
+          lastState = state;
+          el.setAttribute('data-promo-state', state);
+          if (setsPageState) {
+            document.documentElement.setAttribute('data-promo-state', state);
+            document.dispatchEvent(new CustomEvent('promo:state', { detail: { state } }));
+            if (state === 'live') this.track('view_promotion');
+          }
+        }
+        if (state === 'ended' && timer) {
+          clearInterval(timer);
+          timer = null;
+        }
+      };
+
+      render();
+      if (lastState !== 'ended') timer = setInterval(render, 1000);
+      // Background tabs throttle timers: catch up when the page is shown again
+      document.addEventListener('visibilitychange', () => { if (!document.hidden && lastState !== 'ended') render(); });
+    },
+
+    setupCopy(button) {
+      const box = button.closest('[data-promo-code-box]');
+      const status = box ? utils.$('[data-promo-copy-status]', box) : null;
+      const label = button.textContent;
+      const copied = button.getAttribute('data-copied-text') || 'Copied!';
+      let reset = null;
+
+      button.addEventListener('click', async () => {
+        const code = (box && box.getAttribute('data-promo-code') || '').trim();
+        if (!code) return;
+        let ok = false;
+        try {
+          await navigator.clipboard.writeText(code);
+          ok = true;
+        } catch (e) {
+          // Older browsers / no permission: copy through a hidden field
+          const field = document.createElement('textarea');
+          field.value = code;
+          field.setAttribute('readonly', '');
+          field.style.cssText = 'position:fixed;opacity:0;pointer-events:none';
+          document.body.appendChild(field);
+          field.select();
+          try { ok = document.execCommand('copy'); } catch (err) { ok = false; }
+          field.remove();
+        }
+        if (!ok) return;
+
+        button.textContent = copied;
+        button.setAttribute('data-copied', '');
+        if (status) status.textContent = `${code} ${copied}`;
+        clearTimeout(reset);
+        reset = setTimeout(() => {
+          button.textContent = label;
+          button.removeAttribute('data-copied');
+          if (status) status.textContent = '';
+        }, 2000);
+        this.track('promo_code_copy', { promo_code: code });
+      });
+    },
+
+    track(event, extra = {}) {
+      window.dataLayer = window.dataLayer || [];
+      window.dataLayer.push(Object.assign({
+        event,
+        promotion_id: window.location.pathname,
+        promotion_name: document.title
+      }, extra));
+    }
+  };
+
   // ===== INITIALIZATION =====
   const App = {
     init() {
@@ -1290,6 +1459,7 @@
       AccordionModule.init();
       YouTubeModule.init();
       DialogModule.init();
+      PromoModule.init();
       MiscFeatures.init();
 
       // GSAP animations (run after other modules)
@@ -1308,6 +1478,7 @@
       gsap: GSAPAnimations,
       youtube: YouTubeModule,
       dialog: DialogModule,
+      promo: PromoModule,
       misc: MiscFeatures
     },
 
