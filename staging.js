@@ -1469,6 +1469,107 @@
     }
   };
 
+  // ===== MODULE: SALE BAR =====
+  // Course footer "Sale Bar" (Footer | Course > Sale Bar settings): a bar at the bottom of the course pages
+  // that links to a promo page. It only shows while that page is published and its countdown is running:
+  // the script fetches the promo page and reads its first [data-promo-countdown] (no countdown = live while
+  // published). It sets data-promo-bar-state="live" on the wrapper; CSS in the page_code_promo embed.
+  const PromoBarModule = {
+    CLOSED_KEY: 'ldk-promo-bar-closed',
+
+    init() {
+      const wrapper = utils.$('[data-promo-bar]');
+      const bar = wrapper && utils.$('.promo-bar_component', wrapper);
+      const link = bar && utils.$('[data-promo-bar-link]', bar);
+      if (!link) return;
+
+      let url;
+      try {
+        url = new URL(link.getAttribute('href') || '', window.location.href);
+      } catch (e) {
+        return;
+      }
+      // Only a promo page on this site, and never on the promo page itself
+      if (url.origin !== window.location.origin || url.pathname === '/' || url.pathname === window.location.pathname) return;
+      if (this.isClosed(url.pathname)) return;
+
+      // After the page has loaded, so the check never competes with the page itself
+      const run = () => this.check(url.pathname)
+        .then(sale => { if (sale) this.show(wrapper, bar, link, url.pathname, sale); })
+        .catch(() => {});
+      if ('requestIdleCallback' in window) requestIdleCallback(run, { timeout: 3000 });
+      else setTimeout(run, 1000);
+    },
+
+    // -> { end: Date | null } while the sale is running, null otherwise
+    async check(path) {
+      const res = await fetch(path, { credentials: 'same-origin' });
+      if (!res.ok) return null; // draft or deleted promo page
+      const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
+      const countdown = doc.querySelector('[data-promo-countdown]');
+      if (!countdown) return { end: null };
+      const start = PromoModule.parseDate(countdown.getAttribute('data-promo-start'), [0, 0]);
+      const end = PromoModule.parseDate(countdown.getAttribute('data-promo-end'), [23, 59]);
+      const now = Date.now();
+      if ((start && now < start) || (end && now >= end)) return null;
+      return { end };
+    },
+
+    show(wrapper, bar, link, path, { end }) {
+      const hide = () => wrapper.removeAttribute('data-promo-bar-state');
+      const reveal = () => {
+        wrapper.setAttribute('data-promo-bar-state', 'live');
+        // The wrapper keeps the bar's height free at the end of the footer
+        const fit = () => wrapper.style.setProperty('--promo-bar-h', `${bar.offsetHeight}px`);
+        fit();
+        if ('ResizeObserver' in window) new ResizeObserver(fit).observe(bar);
+        this.track('view_promotion', path);
+      };
+
+      // The cookie card is answered first; the bar comes after
+      const cookie = utils.$('.cookie-banner_component');
+      if (cookie && cookie.classList.contains('is-visible')) {
+        const watch = new MutationObserver(() => {
+          if (cookie.classList.contains('is-visible')) return;
+          watch.disconnect();
+          reveal();
+        });
+        watch.observe(cookie, { attributes: true, attributeFilter: ['class'] });
+      } else {
+        reveal();
+      }
+
+      // The sale ends while the page is open: the bar goes away
+      if (end) {
+        const left = end - Date.now();
+        if (left < 2147483647) setTimeout(hide, left);
+      }
+
+      link.addEventListener('click', () => this.track('select_promotion', path));
+      const close = utils.$('[data-promo-bar-close]', bar);
+      if (close) {
+        close.addEventListener('click', () => {
+          hide();
+          try { sessionStorage.setItem(this.CLOSED_KEY, path); } catch (e) { /* private mode */ }
+        });
+      }
+    },
+
+    // Closed in this visit: stays closed until the browser tab session ends
+    isClosed(path) {
+      try {
+        return sessionStorage.getItem(this.CLOSED_KEY) === path;
+      } catch (e) {
+        return false;
+      }
+    },
+
+    track(event, path) {
+      window.dataLayer = window.dataLayer || [];
+      window.dataLayer.push({ event, promotion_id: path, creative_name: 'sale_bar' });
+    }
+  };
+
   // ===== INITIALIZATION =====
   const App = {
     init() {
@@ -1478,6 +1579,7 @@
       YouTubeModule.init();
       DialogModule.init();
       PromoModule.init();
+      PromoBarModule.init();
       MiscFeatures.init();
 
       // GSAP animations (run after other modules)
@@ -1497,6 +1599,7 @@
       youtube: YouTubeModule,
       dialog: DialogModule,
       promo: PromoModule,
+      promoBar: PromoBarModule,
       misc: MiscFeatures
     },
 
